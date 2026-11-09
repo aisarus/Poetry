@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+output/
+*.wav
+*.speak.txt
+*.speak.ps1
+.venv/
+# Keep private poems and the source handoff outside this public repository.
+private/
+POETRY_LAB_HANDOFF_FULL.md
