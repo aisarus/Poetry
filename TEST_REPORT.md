@@ -34,3 +34,7 @@ python poetry_lab.py --model qwen2.5:7b --topic "Праздник маленьк
 The original 8 checks still pass. Six additional tests cover stress-aware rhyme hints, unknown accents, a PCM WAV with a known 220 Hz tone and internal pause, and an end-to-end critic/revision cycle where actual waveform measurements enter the critic prompt and trace. `python -m unittest discover -q`: 14/14 PASS in this Linux environment.
 
 The audio orchestration used a simulated synthesizer that wrote real WAV bytes. Windows SAPI itself and a real Ollama model remain untested here. The pitch estimator is rough and the phonetic layer lacks full Russian G2P. Neither technical check establishes artistic quality.
+
+## Masked diffusion prototype — 2026-11-09
+
+`masked_diffusion.py` implements random-rate absorbing-mask training on accepted draft/revision pairs and confidence-ranked iterative unmasking at inference. A Russian pretrained MLM checkpoint is configured but has **not been downloaded or fine-tuned** in this environment: PyTorch and Transformers are absent. Three pure Python tests verify corruption/labels, line and stanza boundaries, locked lines, reverse commitment schedule, and human acceptance gating for trace exports. Total: 17/17 tests pass. CLI parsing and bytecode compilation pass. This does not establish training convergence or good poetic output.
