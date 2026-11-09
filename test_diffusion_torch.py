@@ -67,6 +67,8 @@ class TorchSmokeTests(unittest.TestCase):
                           'раз', 'два', 'три', 'четыре', 'тема', 'черновик', 'редакция']
             (base / 'vocab.txt').write_text('\n'.join(vocabulary) + '\n', encoding='utf-8')
             tokenizer = BertTokenizer(vocab_file=str(base / 'vocab.txt'))
+            self.assertNotEqual(tokenizer.convert_tokens_to_ids('крыша'), tokenizer.unk_token_id,
+                                f'Tiny tokenizer did not load vocabulary: {tokenizer.get_vocab()}')
             tokenizer.save_pretrained(base)
             model = BertForMaskedLM(BertConfig(vocab_size=len(tokenizer), hidden_size=32,
                                                num_hidden_layers=1, num_attention_heads=4,
