@@ -11,3 +11,4 @@ POETRY_LAB_HANDOFF_FULL.md
 data/
 checkpoints/
 *.jsonl
+eval/
