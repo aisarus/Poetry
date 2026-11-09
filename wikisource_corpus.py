@@ -108,12 +108,13 @@ def passages(poem: str, min_lines: int = 8, max_lines: int = 20) -> list[str]:
     return chunks
 
 
-def collect(max_pages: int, output: Path, delay: float = 0.2) -> dict:
+def collect(max_pages: int, output: Path, delay: float = 0.2,
+            selected_titles: list[str] | None = None) -> dict:
     if output.exists():
         raise FileExistsError(f'{output}: не перезаписываю готовый корпус')
     output.parent.mkdir(parents=True, exist_ok=True)
     seen, skipped, records = 0, 0, []
-    for title in titles(max_pages):
+    for title in (selected_titles if selected_titles is not None else titles(max_pages)):
         time.sleep(delay)
         parsed = api({'action': 'parse', 'page': title, 'prop': 'text|categories'})['parse']
         seen += 1
@@ -136,10 +137,11 @@ def main(argv=None):
     ap.add_argument('--max-pages', type=int, default=100)
     ap.add_argument('--out', required=True)
     ap.add_argument('--delay', type=float, default=0.2)
+    ap.add_argument('--title', action='append', help='Проверить конкретную страницу (можно повторить)')
     args = ap.parse_args(argv)
     if args.max_pages < 1 or args.max_pages > 900 or args.delay < 0:
         ap.error('max-pages: 1..900, delay >= 0')
-    print(json.dumps(collect(args.max_pages, Path(args.out), args.delay), ensure_ascii=False))
+    print(json.dumps(collect(args.max_pages, Path(args.out), args.delay, args.title), ensure_ascii=False))
 
 
 if __name__ == '__main__':
