@@ -18,3 +18,7 @@ jobs:
           python -m pip install transformers
       - name: Run unit and tiny-model smoke tests
         run: python -m unittest discover -v
+      - name: Smoke test public-domain corpus fetch
+        run: |
+          python wikisource_corpus.py --max-pages 2 --delay 0 --out /tmp/poetry-corpus.jsonl
+          python -c "import json; p='/tmp/poetry-corpus.jsonl'; rows=[json.loads(x) for x in open(p, encoding='utf-8')]; assert rows and all(x['rights_tag']=='PD-old-70' for x in rows), 'No verified public-domain verses'"

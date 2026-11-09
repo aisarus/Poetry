@@ -42,6 +42,22 @@ def read_pairs(path: Path, require_accepted: bool = True) -> list[dict[str, str]
     return records
 
 
+def read_corpus(path: Path) -> list[dict[str, str]]:
+    records = []
+    for line_no, line in enumerate(path.read_text(encoding='utf-8-sig').splitlines(), 1):
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        if not isinstance(item, dict) or not isinstance(item.get('text'), str) or not item['text'].strip():
+            raise ValueError(f'{path}:{line_no}: нужен непустой text')
+        if item.get('rights_tag') != 'PD-old-70' or not str(item.get('source_url', '')).startswith('https://ru.wikisource.org/wiki/'):
+            raise ValueError(f'{path}:{line_no}: нет проверенной метки PD и источника')
+        records.append({'topic': str(item.get('topic', '')), 'draft': '', 'revision': item['text']})
+    if not records:
+        raise ValueError(f'{path}: пустой корпус')
+    return records
+
+
 def export_trace(trace_path: Path, topic: str, out: Path) -> int:
     history = json.loads(trace_path.read_text(encoding='utf-8'))
     if not isinstance(history, list):
@@ -195,7 +211,8 @@ def train(args) -> None:
     torch, AutoTokenizer, AutoModelForMaskedLM = _dependencies()
     rng = random.Random(args.seed)
     torch.manual_seed(args.seed)
-    records = read_pairs(Path(args.data), require_accepted=not args.include_unreviewed)
+    records = (read_pairs(Path(args.data), require_accepted=not args.include_unreviewed)
+               if args.data else read_corpus(Path(args.corpus)))
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     if tokenizer.mask_token_id is None or tokenizer.cls_token_id is None or tokenizer.sep_token_id is None:
         raise ValueError('Нужен BERT-подобный токенизатор с MASK/CLS/SEP')
@@ -312,7 +329,9 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description='Обучение и генерация masked diffusion Poetry Lab')
     sub = parser.add_subparsers(dest='command', required=True)
     tr = sub.add_parser('train')
-    tr.add_argument('--data', required=True, help='JSONL: topic, draft, revision')
+    source = tr.add_mutually_exclusive_group(required=True)
+    source.add_argument('--data', help='JSONL: topic, draft, revision, accepted')
+    source.add_argument('--corpus', help='JSONL с финальными стихами и проверенными PD метками для bootstrap')
     tr.add_argument('--out', required=True, help='Папка для весов и токенизатора (не коммитить)')
     tr.add_argument('--base-model', default=BASE_MODEL)
     tr.add_argument('--epochs', type=int, default=3)
@@ -344,6 +363,8 @@ def main(argv=None) -> int:
     if args.command == 'train':
         if args.epochs < 1 or args.max_length < 32 or args.accumulation < 1 or args.lr <= 0 or not 0 <= args.draft_dropout <= 1 or args.limit < 0:
             parser.error('Некорректные параметры обучения')
+        if args.corpus and args.include_unreviewed:
+            parser.error('--include-unreviewed применяется только к --data')
         train(args)
     elif args.command == 'export-trace':
         print(f'Экспортировано пар: {export_trace(Path(args.trace), args.topic, Path(args.out))}. Отметь удачные accepted: true после просмотра.')

@@ -78,6 +78,16 @@ class DiffusionTests(unittest.TestCase):
             self.assertEqual(md.read_pairs(dest)[0]['revision'], 'Правка')
             self.assertRaises(FileExistsError, md.export_trace, source, 'Тема', dest)
 
+    def test_bootstrap_corpus_requires_rights_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'corpus.jsonl'
+            path.write_text(json.dumps({'text': 'Строки стиха', 'topic': 'Пушкин',
+                                        'source_url': 'https://ru.wikisource.org/wiki/Test',
+                                        'rights_tag': 'PD-old-70'}, ensure_ascii=False), encoding='utf-8')
+            self.assertEqual(md.read_corpus(path)[0]['draft'], '')
+            path.write_text(json.dumps({'text': 'Строки стиха'}), encoding='utf-8')
+            self.assertRaisesRegex(ValueError, 'PD', md.read_corpus, path)
+
 
 if __name__ == '__main__':
     unittest.main()

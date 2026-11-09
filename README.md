@@ -14,6 +14,8 @@ python -m venv .venv
 python -m pip install -r requirements-diffusion.txt
 ```
 
+Для первого **реального** bootstrap train/sample на GPU есть [`colab/PoetryLab_Train.ipynb`](colab/PoetryLab_Train.ipynb). Он загружает отрывки поэзии Пушкина из Викитеки с меткой `PD-old-70`, записывает ссылки на страницы, учит масочную модель на финальных стихах и сохраняет веса/пример в Google Drive. Это только первая стадия: финальные тексты не являются авторскими траекториями правки. `wikisource_corpus.py` можно запустить отдельно: `python wikisource_corpus.py --max-pages 150 --out data/pushkin_pd.jsonl`, затем `python masked_diffusion.py train --corpus data/pushkin_pd.jsonl --out checkpoints/bootstrap-v1 --epochs 1 --limit 250`. После bootstrap дообучение на ручных парах запускается через `--data data/pairs.jsonl --base-model checkpoints/bootstrap-v1`. Корпус локальный и исключён из Git.
+
 Сначала экспортируйте пары из локального прогона Ollama (файл остаётся на вашем компьютере):
 
 ```powershell
