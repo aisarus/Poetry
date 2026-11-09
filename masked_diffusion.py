@@ -226,7 +226,7 @@ def train(args) -> None:
     if device == 'cuda':
         model.gradient_checkpointing_enable()
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    scaler = torch.cuda.amp.GradScaler(enabled=device == 'cuda')
+    scaler = torch.amp.GradScaler('cuda', enabled=device == 'cuda')
     output = Path(args.out)
     output.mkdir(parents=True, exist_ok=True)
     seen = skipped = updates = 0
@@ -315,7 +315,10 @@ def sample(args) -> str:
         for p in masked:
             row = logits[len(prefix) + p].float().clone()
             row[list(blocked)] = -float('inf')
-            top = torch.topk(row, k=min(args.top_k, row.numel()))
+            valid = int(torch.isfinite(row).sum().item())
+            if not valid:
+                raise RuntimeError('Модель не дала допустимых токенов для раскрытия маски')
+            top = torch.topk(row, k=min(args.top_k, valid))
             probabilities = torch.softmax(top.values / args.temperature, dim=0)
             pick = torch.multinomial(probabilities, 1).item()
             choices[p] = int(top.indices[pick]), float(probabilities[pick])
