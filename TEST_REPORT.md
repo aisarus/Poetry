@@ -28,3 +28,9 @@ python poetry_lab.py --model qwen2.5:7b --topic "Праздник маленьк
 ```
 
 `qwen2.5:7b` runs in the user's own Ollama environment; it does **not** consume ChatGPT Work or GPT model message allowances. Start with `--rounds 1` to minimize local runtime. To run the ChatGPT task in Work mode or set the ChatGPT reasoning effort to Medium, choose those options in the ChatGPT interface; these modes cannot be switched by this Python program.
+
+## Update — 2026-11-09
+
+The original 8 checks still pass. Six additional tests cover stress-aware rhyme hints, unknown accents, a PCM WAV with a known 220 Hz tone and internal pause, and an end-to-end critic/revision cycle where actual waveform measurements enter the critic prompt and trace. `python -m unittest discover -q`: 14/14 PASS in this Linux environment.
+
+The audio orchestration used a simulated synthesizer that wrote real WAV bytes. Windows SAPI itself and a real Ollama model remain untested here. The pitch estimator is rough and the phonetic layer lacks full Russian G2P. Neither technical check establishes artistic quality.

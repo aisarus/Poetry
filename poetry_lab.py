@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from typing import Any
 import phonetics
+import audio_feedback
 
 VOWELS = 'аеёиоуыэюя'
 VOWELS_ALL = VOWELS + VOWELS.upper()
@@ -145,7 +146,7 @@ def draft_prompt(topic: str, stanzas: int, schemes: list[str]) -> str:
 Отдай ТОЛЬКО стихотворение: без заголовка, списка и пояснений.'''
 
 
-def critic_prompt(poem: str, report: dict[str, Any]) -> str:
+def critic_prompt(poem: str, report: dict[str, Any], audio: dict | None = None) -> str:
     compact = [{'number': s['number'], 'syllables': s['syllables'],
                 'long_span': s['three_long_lines_span'], 'expected_scheme': s['expected_scheme'],
                 'stress_patterns': [p['stress_pattern'] for p in s['phonetic_lines']],
@@ -156,6 +157,8 @@ def critic_prompt(poem: str, report: dict[str, Any]) -> str:
 Разбери СЛЕДУЮЩИЙ текст: (а) где при декламации сбиваются ударения/ритм, (б) неуместные метафоры и логические разрывы, (в) слабые окончания, (г) композиция и развитие мысли, (д) какие строки нельзя менять, потому что они удачны.
 Это не аудиопрослушивание: не утверждай, будто ты реально услышал звук. Анализируй предполагаемую декламацию по тексту. Не считай число слогов эквивалентом метра. Будь конкретен, приводи проблемные строки.
 Автоматическая неполная фонетическая сводка: {json.dumps(compact, ensure_ascii=False)}
+Аудионаблюдения (только если есть WAV): {json.dumps(audio, ensure_ascii=False) if audio is not None else 'нет; не утверждай, что слышал чтение'}
+Если есть аудио, опирайся только на измеренные длительности, паузы и примерную высоту; не придумывай услышанные интонации, ударения или дикцию. Сравни темп первых трёх строк каждой строфы, учитывая число слогов и ограничения синтетического голоса.
 ТЕКСТ:\n{poem}
 Ответь кратко: максимум 12 конкретных замечаний, без переписывания стихотворения.'''
 
@@ -208,8 +211,55 @@ try {
         ps_path.unlink(missing_ok=True)
 
 
+def speak_windows_batch(poem: str, run_dir: Path, step: int) -> tuple[Path, list[Path]]:
+    """SAPI reads the full poem and each line in one process for acoustic analysis."""
+    if os.name != 'nt':
+        raise RuntimeError('--audio-feedback требует Windows SAPI или тестовый синтезатор.')
+    audio_dir = run_dir / f'audio_{step:02d}'
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    full = run_dir / f'reading_{step:02d}.wav'
+    lines = [line.strip() for line in poem.splitlines() if line.strip()]
+    paths = [audio_dir / f'line_{i:03d}.wav' for i in range(1, len(lines) + 1)]
+    payload = audio_dir / 'input.json'
+    ps_path = audio_dir / 'speak.ps1'
+    payload.write_text(json.dumps({'poem': poem, 'lines': lines}, ensure_ascii=False), encoding='utf-8')
+    ps_path.write_text('''param([string]$inputPath, [string]$fullPath, [string]$audioDir)
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Speech
+$data = Get-Content -LiteralPath $inputPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+try {
+  $ru = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like 'ru-*' } | Select-Object -First 1
+  if (-not $ru) { throw 'Русский голос Windows SAPI не найден' }
+  $s.SelectVoice($ru.VoiceInfo.Name)
+  $s.SetOutputToWaveFile($fullPath)
+  $s.Speak([string]$data.poem)
+  $s.SetOutputToNull()
+  for ($i = 0; $i -lt $data.lines.Count; $i++) {
+    $path = Join-Path $audioDir ('line_{0:D3}.wav' -f ($i + 1))
+    $s.SetOutputToWaveFile($path)
+    $s.Speak([string]$data.lines[$i])
+    $s.SetOutputToNull()
+  }
+} finally { $s.Dispose() }
+''', encoding='utf-8-sig')
+    try:
+        subprocess.run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                        '-File', str(ps_path), str(payload), str(full), str(audio_dir)], check=True)
+        if not full.is_file() or any(not path.is_file() for path in paths):
+            raise RuntimeError('SAPI не создал все WAV-файлы.')
+        return full, paths
+    except FileNotFoundError as exc:
+        raise RuntimeError('Не найден powershell.exe.') from exc
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError('Синтез SAPI не удался; проверь русский голос Windows.') from exc
+    finally:
+        payload.unlink(missing_ok=True)
+        ps_path.unlink(missing_ok=True)
+
+
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description='Poetry Lab: Ollama + prosody heuristics + revision + Windows SAPI')
+    ap = argparse.ArgumentParser(description='Poetry Lab: Ollama + phonetic hints + optional WAV feedback')
     ap.add_argument('--topic', default='Радость неожиданного человеческого взаимопонимания')
     ap.add_argument('--file', help='Проанализировать/редактировать существующий UTF-8 текст вместо генерации')
     ap.add_argument('--model', default='qwen2.5:7b')
@@ -220,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument('--stress-lexicon', help='UTF-8 словарь ударений, формы вроде караме́лью, одна или несколько на строку')
     ap.add_argument('--out', default='output')
     ap.add_argument('--speak', action='store_true', help='Сделать WAV с помощью Windows SAPI (не оценка звука!)')
+    ap.add_argument('--audio-feedback', action='store_true', help='Синтезировать и измерять WAV на каждой итерации перед критикой (Windows, русский SAPI голос)')
     ap.add_argument('--analyze-only', action='store_true', help='Только статическая разметка, без Ollama; требует --file')
     args = ap.parse_args(argv)
     if args.stanzas < 1 or args.stanzas > 30 or args.rounds < 0 or args.rounds > 20:
@@ -248,6 +299,17 @@ def main(argv: list[str] | None = None) -> int:
         for step in range(args.rounds + 1 if not args.analyze_only else 1):
             report = analyze(current, schemes, lexicon)
             (run_dir / f'poem_{step:02d}.txt').write_text(current + '\n', encoding='utf-8')
+            audio_report = None
+            if args.audio_feedback:
+                full_wav, line_wavs = speak_windows_batch(current, run_dir, step)
+                phonetic_lines = [p for stanza in report['stanzas'] for p in stanza['phonetic_lines']]
+                text_lines = [line for stanza in report['stanzas'] for line in stanza['lines']]
+                audio_report = audio_feedback.reading_report(text_lines, line_wavs,
+                                                              [p['syllables'] for p in phonetic_lines])
+                audio_report['full_wav'] = str(full_wav)
+                (run_dir / f'audio_metrics_{step:02d}.json').write_text(
+                    json.dumps(audio_report, ensure_ascii=False, indent=2), encoding='utf-8')
+                report['audio_feedback'] = audio_report
             (run_dir / f'metrics_{step:02d}.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
             print(f'\nЭтап {step}: строф={report["stanza_count"]}, слоги=',
                   [r['syllables'] for r in report['stanzas']], flush=True)
@@ -258,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
             print('Критик анализирует смысл и предполагаемое звучание...', flush=True)
             critique = ollama_chat([
                 {'role': 'system', 'content': 'Ты беспристрастный строгий редактор. Не льсти и не придумывай несуществовавшего прослушивания аудио.'},
-                {'role': 'user', 'content': critic_prompt(current, report)},
+                {'role': 'user', 'content': critic_prompt(current, report, audio_report)},
             ], args.model, args.url, 0.25)
             item['critique'] = critique
             (run_dir / f'critique_{step:02d}.txt').write_text(critique + '\n', encoding='utf-8')
@@ -270,8 +332,10 @@ def main(argv: list[str] | None = None) -> int:
             ], args.model, args.url, 0.6))
         (run_dir / 'trace.json').write_text(json.dumps(history, ensure_ascii=False, indent=2), encoding='utf-8')
         (run_dir / 'final.txt').write_text(current + '\n', encoding='utf-8')
-        if args.speak:
+        if args.speak and not args.audio_feedback:
             speak_windows(current, run_dir / 'final.wav')
+        elif args.speak and args.audio_feedback:
+            (run_dir / 'final.wav').write_bytes((run_dir / f'reading_{args.rounds if not args.analyze_only else 0:02d}.wav').read_bytes())
         print(f'\nСохранено: {run_dir.resolve()}')
         print('\n' + current)
         return 0
