@@ -218,7 +218,9 @@ def train(args) -> None:
         raise ValueError('Нужен BERT-подобный токенизатор с MASK/CLS/SEP')
     tokenizer.add_special_tokens({'additional_special_tokens': [LINE, STANZA]})
     model = AutoModelForMaskedLM.from_pretrained(args.base_model)
-    model.resize_token_embeddings(len(tokenizer))
+    # A tiny test vocabulary can have a rank-deficient covariance; the default
+    # mean/covariance initializer in recent Transformers may then yield NaNs.
+    model.resize_token_embeddings(len(tokenizer), mean_resizing=False)
     if args.max_length > model.config.max_position_embeddings:
         raise ValueError(f'max_length превышает предел модели: {model.config.max_position_embeddings}')
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -251,6 +253,8 @@ def train(args) -> None:
             targets = torch.tensor([labels], device=device)
             with torch.autocast(device_type='cuda', dtype=torch.float16, enabled=device == 'cuda'):
                 loss = model(input_ids=inputs, labels=targets).loss
+            if not torch.isfinite(loss):
+                raise FloatingPointError('Нечисловая loss до шага оптимизатора; проверь данные и learning rate')
             scaler.scale(loss / args.accumulation).backward()
             pending += 1
             seen += 1
@@ -259,6 +263,8 @@ def train(args) -> None:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 scaler.step(optimizer)
                 scaler.update()
+                if not all(torch.isfinite(param).all() for param in model.parameters()):
+                    raise FloatingPointError('Нечисловые веса после шага оптимизатора; снизь learning rate')
                 optimizer.zero_grad(set_to_none=True)
                 updates += 1
                 pending = 0
@@ -271,6 +277,8 @@ def train(args) -> None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(optimizer)
             scaler.update()
+            if not all(torch.isfinite(param).all() for param in model.parameters()):
+                raise FloatingPointError('Нечисловые веса после шага оптимизатора; снизь learning rate')
             optimizer.zero_grad(set_to_none=True)
             updates += 1
         if not seen:
