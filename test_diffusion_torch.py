@@ -66,7 +66,11 @@ class TorchSmokeTests(unittest.TestCase):
                           'звенит', 'утро', 'на', 'крыше', 'солнце', 'горит',
                           'раз', 'два', 'три', 'четыре', 'тема', 'черновик', 'редакция']
             (base / 'vocab.txt').write_text('\n'.join(vocabulary) + '\n', encoding='utf-8')
-            tokenizer = BertTokenizer(vocab_file=str(base / 'vocab.txt'))
+            # Transformers 5 uses `vocab`; Transformers 4 uses `vocab_file`.
+            try:
+                tokenizer = BertTokenizer(vocab={word: i for i, word in enumerate(vocabulary)})
+            except TypeError:
+                tokenizer = BertTokenizer(vocab_file=str(base / 'vocab.txt'))
             self.assertNotEqual(tokenizer.convert_tokens_to_ids('крыша'), tokenizer.unk_token_id,
                                 f'Tiny tokenizer did not load vocabulary: {tokenizer.get_vocab()}')
             tokenizer.save_pretrained(base)
