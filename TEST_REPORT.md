@@ -48,3 +48,7 @@ GitHub Actions [run 42542742339](https://github.com/aisarus/Poetry/actions/runs/
 ## Public-domain bootstrap preparation — 2026-11-09
 
 Added a Wikisource collector restricted to Pushkin category pages with `PD-old-70` tag, source URLs retained per passage, and a Colab notebook for GPU bootstrap training. Added an end-to-end tiny local Transformer train/sample test for CI and a live corpus-fetch smoke step. Here: 23 discovered tests, 21 pass, 2 PyTorch tests skipped. Colab sign-in was not completed, so no actual GPU training or generated poem from the pretrained Russian model exists yet. The next CI run must validate the new end-to-end and external fetch steps; source HTML/API can change.
+
+## Verified integration — 2026-11-09
+
+[GitHub Actions run 42545815583](https://github.com/aisarus/Poetry/actions/runs/42545815583) passed 23/23 tests with CPU PyTorch and Transformers installed. This includes saving and sampling a trained tiny BERT checkpoint. The live Wikisource step found the `PD-old-70` hidden category on one named Pushkin page and extracted six passages. This validates the collector on that page, but not the planned 150-page corpus. Local environment: 21 passed, two dependency-gated tests skipped. The pretrained `ai-forever/ruBert-base` model has not yet been trained or sampled: Google Colab requires account sign-in.
